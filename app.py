@@ -1,9 +1,13 @@
 
+import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
+st.set_page_config(page_title="SafarGo Dashboard", layout="wide")
+st.title("SafarGo: Reinforcement Learning MVP")
+st.write("Compare Q-learning with random and busiest-zone strategies.")
 # Create images folder automatically
 os.makedirs("images", exist_ok=True)
 
