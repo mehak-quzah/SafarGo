@@ -5,11 +5,27 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-st.set_page_config(page_title="SafarGo Dashboard", layout="wide")
+# ---------------------------------
+# Streamlit page settings
+# ---------------------------------
+st.set_page_config(
+    page_title="SafarGo Dashboard",
+    page_icon="🚗",
+    layout="wide"
+)
+
 st.title("SafarGo: Reinforcement Learning MVP")
-st.write("Compare Q-learning with random and busiest-zone strategies.")
+st.write(
+    "Compare Q-learning with random and busiest-zone strategies."
+)
+
+st.caption(
+    "Simulation results are illustrative and do not represent real-world SafarGo data."
+)
+
 # Create images folder automatically
 os.makedirs("images", exist_ok=True)
+
 
 # ---------------------------------
 # 1. SafarGo simulation settings
@@ -19,7 +35,7 @@ np.random.seed(42)
 NUM_ZONES = 40
 NUM_VEHICLES = 300
 EPISODES = 300
-STEPS = 48  # 48 decisions per simulated episode
+STEPS = 48
 
 ALPHA = 0.5
 GAMMA = 0.9
@@ -31,6 +47,7 @@ zone_popularity = np.random.uniform(0.5, 1.5, NUM_ZONES)
 
 # Approximate distances between zones (fuel-cost units)
 zone_positions = np.random.uniform(0, 10, (NUM_ZONES, 2))
+
 distances = np.sqrt(
     ((zone_positions[:, None] - zone_positions[None, :]) ** 2).sum(axis=2)
 )
@@ -41,7 +58,7 @@ q_table = np.zeros((NUM_ZONES, 3, NUM_ZONES))
 
 
 def get_demand(step):
-    """Generate changing, simulated demand across 40 zones."""
+    """Generate changing simulated demand across 40 zones."""
     if 12 <= step % 24 <= 18:
         peak_factor = 1.5
     else:
@@ -50,6 +67,7 @@ def get_demand(step):
     demand = np.random.poisson(
         zone_popularity * peak_factor * 0.8
     )
+
     return demand
 
 
@@ -61,6 +79,7 @@ def get_demand_level(demand):
         return 0
     elif total < 35:
         return 1
+
     return 2
 
 
@@ -104,7 +123,7 @@ def run_episode(policy, episode, training=False):
         source = candidates[np.argmax(spare[candidates])]
         demand_level = get_demand_level(demand)
 
-        # Choose the repositioning destination
+        # Choose repositioning destination
         if policy == "q_learning":
             if training and np.random.random() < EPSILON:
                 destination = np.random.randint(NUM_ZONES)
@@ -114,12 +133,9 @@ def run_episode(policy, episode, training=False):
                 )
 
         elif policy == "busiest":
-            # Baseline: send vehicle to the zone with
-            # the greatest unmet demand
             destination = np.argmax(demand - capacity)
 
         else:
-            # Random baseline
             destination = np.random.randint(NUM_ZONES)
 
         # Reposition one vehicle
@@ -128,6 +144,7 @@ def run_episode(policy, episode, training=False):
             total_fuel += fuel_used
 
             old_capacity = capacity.copy()
+
             old_unserved = np.maximum(
                 demand - old_capacity, 0
             ).sum()
@@ -136,6 +153,7 @@ def run_episode(policy, episode, training=False):
             vehicles[destination] += 1
 
             new_capacity = vehicles // 4
+
             new_unserved = np.maximum(
                 demand - new_capacity, 0
             ).sum()
@@ -145,6 +163,7 @@ def run_episode(policy, episode, training=False):
                 2 * (old_unserved - new_unserved)
                 - 0.1 * fuel_used
             )
+
         else:
             reward = -0.1
 
@@ -155,13 +174,18 @@ def run_episode(policy, episode, training=False):
             next_state = get_demand_level(
                 get_demand(step + 1)
             )
-            old_q = q_table[source, demand_level, destination]
+
+            old_q = q_table[
+                source, demand_level, destination
+            ]
 
             future_q = np.max(
                 q_table[destination, next_state]
             )
 
-            q_table[source, demand_level, destination] = (
+            q_table[
+                source, demand_level, destination
+            ] = (
                 old_q
                 + ALPHA * (
                     reward
@@ -184,6 +208,11 @@ def run_episode(policy, episode, training=False):
 # ---------------------------------
 # 2. Train Q-learning
 # ---------------------------------
+st.subheader("Training Q-learning")
+
+progress_bar = st.progress(0)
+status_text = st.empty()
+
 training_rewards = []
 
 for episode in range(EPISODES):
@@ -194,12 +223,24 @@ for episode in range(EPISODES):
     )
 
     result = run_episode(
-        "q_learning", episode, training=True
+        "q_learning",
+        episode,
+        training=True
     )
 
     training_rewards.append(result["Reward"])
 
-print("Q-learning training completed.")
+    # Update progress occasionally
+    if episode % 10 == 0 or episode == EPISODES - 1:
+        progress_bar.progress(
+            (episode + 1) / EPISODES
+        )
+        status_text.write(
+            f"Training episode: {episode + 1}/{EPISODES}"
+        )
+
+progress_bar.empty()
+status_text.success("Q-learning training completed.")
 
 
 # ---------------------------------
@@ -248,23 +289,64 @@ for system, runs in results.items():
     })
 
 df = pd.DataFrame(summary)
-st.subheader("Performance Comparison")
-st.dataframe(df.round(2), use_container_width=True)
 
-print("\nPERFORMANCE COMPARISON")
-print(df.round(2).to_string(index=False))
-
+# Save the full-precision results
 df.to_csv("safargo_results.csv", index=False)
 
+# ---------------------------------
+# 4. Display performance table
+# ---------------------------------
+st.divider()
+st.subheader("Performance Comparison")
+
+# Two decimal places to match the Word report
+st.dataframe(
+    df.round(2),
+    use_container_width=True,
+    hide_index=True
+)
+
+# Show key metrics
+st.subheader("Key Results")
+
+col1, col2, col3 = st.columns(3)
+
+q_results = df[df["System"] == "Q-learning"].iloc[0]
+
+with col1:
+    st.metric(
+        "Q-learning: Completed Rides",
+        f'{q_results["Completed rides"]:.2f}'
+    )
+
+with col2:
+    st.metric(
+        "Q-learning: Waiting Time",
+        f'{q_results["Average waiting time (min)"]:.2f} min'
+    )
+
+with col3:
+    st.metric(
+        "Q-learning: Fuel Units",
+        f'{q_results["Fuel units"]:.2f}'
+    )
+
 
 # ---------------------------------
-# 4. Plot the reward curve
+# 5. Plot the reward curve
 # ---------------------------------
-plt.figure(figsize=(9, 5))
+st.divider()
+st.subheader("Q-learning Training Progress")
 
-plt.plot(training_rewards, label="Episode reward")
+fig, ax = plt.subplots(figsize=(8, 4.5), dpi=120)
 
-# Smooth the curve to make the general trend easier to see
+ax.plot(
+    training_rewards,
+    label="Episode reward",
+    linewidth=1.2,
+    alpha=0.55
+)
+
 window = 10
 
 if len(training_rewards) >= window:
@@ -274,59 +356,124 @@ if len(training_rewards) >= window:
         mode="valid"
     )
 
-    plt.plot(
+    ax.plot(
         range(window - 1, EPISODES),
         moving_average,
-        label="10-episode moving average"
+        label="10-episode moving average",
+        linewidth=2
     )
 
-plt.xlabel("Training episode")
-plt.ylabel("Total reward")
-plt.title("SafarGo Q-learning Reward Curve")
-plt.legend()
-plt.tight_layout()
-st.pyplot(plt.gcf())
-plt.savefig("images/safargo_reward_curve.png")
-plt.close()
+ax.set_xlabel("Training Episode")
+ax.set_ylabel("Total Reward")
+ax.set_title("SafarGo Q-learning Reward Curve")
+ax.legend()
+ax.grid(axis="y", alpha=0.25)
+
+fig.tight_layout()
+
+fig.savefig(
+    "images/safargo_reward_curve.png",
+    dpi=150,
+    bbox_inches="tight"
+)
+
+st.pyplot(fig, use_container_width=False)
+plt.close(fig)
 
 
 # ---------------------------------
-# 5. Plot performance metrics
+# 6. Plot performance metrics
 # ---------------------------------
+st.divider()
+st.subheader("Strategy Performance Comparison")
+
 metrics = [
-    ("Average waiting time (min)",
-     "Average Passenger Waiting Time"),
-
-    ("Completed rides",
-     "Completed Rides"),
-
-    ("Fuel units",
-     "Fuel Consumption")
+    (
+        "Average waiting time (min)",
+        "Average Passenger Waiting Time",
+        "average_waiting_time"
+    ),
+    (
+        "Completed rides",
+        "Completed Rides",
+        "completed_rides"
+    ),
+    (
+        "Fuel units",
+        "Fuel Consumption",
+        "fuel_consumption"
+    )
 ]
 
-for column, title in metrics:
-    plt.figure(figsize=(8, 5))
+for column, title, filename in metrics:
 
-    bars = plt.bar(df["System"], df[column])
+    fig, ax = plt.subplots(figsize=(7, 3.8), dpi=120)
 
-    # Display actual values above bars
-    plt.bar_label(bars, fmt="%.2f", padding=4)
+    bars = ax.barh(
+        df["System"],
+        df[column]
+    )
 
-    plt.title(title)
-    plt.ylabel(column)
-    plt.xticks(rotation=10)
+    # Display values at the ends of bars
+    ax.bar_label(
+        bars,
+        fmt="%.2f",
+        padding=5,
+        fontsize=9
+    )
 
-    # Allow space above bars for labels
-    plt.margins(y=0.15)
-    plt.tight_layout()
+    ax.set_title(title)
+    ax.set_xlabel(column)
+    ax.grid(axis="x", alpha=0.25)
+    ax.set_axisbelow(True)
 
-    filename = column.lower().replace(" ", "_")
-    filename = filename.replace("(", "").replace(")", "")
+    # Leave space for labels
+    max_value = df[column].max()
 
-    st.pyplot(plt.gcf())
-    plt.savefig("images/" + filename + ".png")
-    plt.show()
-    plt.close()
+    if max_value > 0:
+        ax.set_xlim(0, max_value * 1.22)
+
+    fig.tight_layout()
+
+    # Save only the graph image
+    fig.savefig(
+        f"images/{filename}.png",
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    # Display a compact graph in Streamlit
+    st.pyplot(fig, use_container_width=False)
+
+    plt.close(fig)
+
+
+# ---------------------------------
+# 7. Download results
+# ---------------------------------
+st.divider()
+st.subheader("Download Simulation Results")
+
+csv_data = df.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    label="Download Results (CSV)",
+    data=csv_data,
+    file_name="safargo_results.csv",
+    mime="text/csv"
+)
+
+st.caption(
+    "Note: This is a simplified simulation. "
+    "Waiting time and fuel consumption are estimates, "
+    "not real-world measurements."
+)
+
+# ---------------------------------
+# 8. Console output
+# ---------------------------------
+print("\nPERFORMANCE COMPARISON")
+print(df.round(2).to_string(index=False))
 
 print("\nActual values used in the graphs:")
 print(
@@ -338,4 +485,6 @@ print(
 print("\nFiles saved:")
 print("- safargo_results.csv")
 print("- images/safargo_reward_curve.png")
-print("- Three metric charts in the images folder")
+print("- images/average_waiting_time.png")
+print("- images/completed_rides.png")
+print("- images/fuel_consumption.png")
