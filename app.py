@@ -248,6 +248,8 @@ for system, runs in results.items():
     })
 
 df = pd.DataFrame(summary)
+st.subheader("Performance Comparison")
+st.dataframe(df.round(2), use_container_width=True)
 
 print("\nPERFORMANCE COMPARISON")
 print(df.round(2).to_string(index=False))
@@ -283,8 +285,9 @@ plt.ylabel("Total reward")
 plt.title("SafarGo Q-learning Reward Curve")
 plt.legend()
 plt.tight_layout()
+st.pyplot(plt.gcf())
 plt.savefig("images/safargo_reward_curve.png")
-plt.show()
+plt.close()
 
 
 # ---------------------------------
@@ -320,8 +323,10 @@ for column, title in metrics:
     filename = column.lower().replace(" ", "_")
     filename = filename.replace("(", "").replace(")", "")
 
+    st.pyplot(plt.gcf())
     plt.savefig("images/" + filename + ".png")
     plt.show()
+    plt.close()
 
 print("\nActual values used in the graphs:")
 print(
