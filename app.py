@@ -35,7 +35,7 @@ np.random.seed(42)
 NUM_ZONES = 40
 NUM_VEHICLES = 300
 EPISODES = 300
-STEPS = 48
+STEPS = 288  # 5-minute decisions for one simulated 24-hour day
 
 ALPHA = 0.5
 GAMMA = 0.9
@@ -59,7 +59,8 @@ q_table = np.zeros((NUM_ZONES, 3, NUM_ZONES))
 
 def get_demand(step):
     """Generate changing simulated demand across 40 zones."""
-    if 12 <= step % 24 <= 18:
+    # With 288 five-minute steps, steps 96-144 represent roughly 8 AM-noon.
+    if 96 <= step <= 144:
         peak_factor = 1.5
     else:
         peak_factor = 1.0
@@ -126,11 +127,16 @@ def run_episode(policy, episode, training=False):
         # Choose repositioning destination
         if policy == "q_learning":
             if training and np.random.random() < EPSILON:
+                # Explore: try a random destination.
                 destination = np.random.randint(NUM_ZONES)
             else:
-                destination = np.argmax(
-                    q_table[source, demand_level]
+                # Exploit: choose randomly among tied best actions.
+                # This avoids always choosing zone 0 when Q-values are equal.
+                state_q_values = q_table[source, demand_level]
+                best_actions = np.flatnonzero(
+                    state_q_values == state_q_values.max()
                 )
+                destination = int(np.random.choice(best_actions))
 
         elif policy == "busiest":
             destination = np.argmax(demand - capacity)
@@ -158,9 +164,14 @@ def run_episode(policy, episode, training=False):
                 demand - new_capacity, 0
             ).sum()
 
-            # Reward encourages serving demand and saving fuel
+            # Reward encourages reducing unmet demand, moving toward
+            # demand, and avoiding unnecessary travel.
+            destination_shortage = max(
+                0, int(demand[destination] - capacity[destination])
+            )
             reward = (
-                2 * (old_unserved - new_unserved)
+                2.0 * (old_unserved - new_unserved)
+                + 0.5 * min(int(demand[destination]), destination_shortage)
                 - 0.1 * fuel_used
             )
 
@@ -171,9 +182,10 @@ def run_episode(policy, episode, training=False):
 
         # Update Q-table during training
         if training and policy == "q_learning":
-            next_state = get_demand_level(
-                get_demand(step + 1)
-            )
+            # Use the observed demand level for this transition.
+            # The next state is represented by the destination zone
+            # and this simplified demand category.
+            next_state = demand_level
 
             old_q = q_table[
                 source, demand_level, destination
